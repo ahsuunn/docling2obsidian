@@ -8,9 +8,10 @@ from docling_core.types.doc import ImageRefMode, PictureItem
 
 # 1. Setup base paths
 vault_root = Path("/home/malik/Documents/obsidian/Notex")
-attachments_base_dir = vault_root / "00 Meta" / "Assets" / "attachments"
+downloads_dir = Path.home() / "Downloads"
 
-target_note_dir = vault_root / "01 Academics" / "7th Semester (2026-1)" / "Big Data"
+attachments_base_dir = vault_root / "00 Meta" / "Assets" / "attachments"
+target_note_dir = vault_root / "03 Knowledge" / "Finance Theory 01"
 target_note_dir.mkdir(parents=True, exist_ok=True)
 
 # 2. Pipeline setup
@@ -24,56 +25,78 @@ converter = DocumentConverter(
     }
 )
 
-# 3. Convert document
-doc_name = "04 Apache Hadoop_rev"
-pdf_path = f"{doc_name}.pdf"
-result = converter.convert(pdf_path)
-doc = result.document
+# 3. Specify list of files to process
+files_to_process = [
+    "02 Present Value Relations.pdf",
+    "03 Fixed Income Securities.pdf",
+    "04 Equities.pdf",
+    "05 Forward and Futures.pdf",
+    "06 Options.pdf",
+    "07 Risk and Return.pdf",
+    "08 Portfolio Theory.pdf",
+    "09 CAPM and APT.pdf",
+    "10 Capital Budgeting.pdf",
+    "11 Efficient Market.pdf",
+]
 
-# --- MODIFICATION: Create document-specific subfolder under attachments ---
-doc_attachments_dir = attachments_base_dir / doc_name
-doc_attachments_dir.mkdir(parents=True, exist_ok=True)
+# 4. Batch Processing Loop
+for file_name in files_to_process:
+    pdf_path = downloads_dir / file_name
 
-# 4. Extract images and store filenames sequentially in a queue
-saved_image_filenames = []
-image_counter = 0
+    if not pdf_path.exists():
+        print(f"Skipping (file not found): {pdf_path}")
+        continue
 
-for element, _ in doc.iterate_items():
-    if isinstance(element, PictureItem):
-        image = element.get_image(doc)
-        if image:
-            image_counter += 1
-            filename = f"{doc_name.lower().replace(' ', '_')}_img_{image_counter:03d}.png"
-            
-            # Save PIL image into the document subfolder
-            filepath = doc_attachments_dir / filename
-            image.save(filepath, format="PNG")
-            
-            saved_image_filenames.append(filename)
+    doc_name = pdf_path.stem
+    print(f"Processing: {doc_name}...")
 
-# 5. Export document
-markdown_content = doc.export_to_markdown(image_mode=ImageRefMode.REFERENCED)
+    # Convert document
+    result = converter.convert(pdf_path)
+    doc = result.document
 
-# 6. Sequential replacement iterator
-image_index = 0
+    # Create document-specific subfolder
+    doc_attachments_dir = attachments_base_dir / doc_name
+    doc_attachments_dir.mkdir(parents=True, exist_ok=True)
 
-def get_next_wikilink(match):
-    global image_index
-    if image_index < len(saved_image_filenames):
-        filename = saved_image_filenames[image_index]
-        image_index += 1
-        # Obsidian short WikiLinks resolve automatically across subfolders
-        return f"![[{filename}]]"
-    return ""  # If there are more placeholders than saved images
+    # Extract images and store filenames
+    saved_image_filenames = []
+    image_counter = 0
 
-# Replace {image_key}, <!-- image -->, or standard Markdown image links sequentially
-image_pattern = r"\{image_key\}|<!-- image -->|!\[.*?\]\((?:.*?/)?([^/\)]+\.(?:png|jpg|jpeg))\)"
-clean_markdown = re.sub(image_pattern, get_next_wikilink, markdown_content)
+    for element, _ in doc.iterate_items():
+        if isinstance(element, PictureItem):
+            image = element.get_image(doc)
+            if image:
+                image_counter += 1
+                filename = f"{doc_name.lower().replace(' ', '_')}_img_{image_counter:03d}.png"
+                filepath = doc_attachments_dir / filename
+                
+                image.save(filepath, format="PNG")
+                saved_image_filenames.append(filename)
 
-# 7. Cleanup slide headers and trailing whitespaces
-clean_markdown = re.sub(r"^## (Page|Slide) \d+\n?", "", clean_markdown, flags=re.MULTILINE)
-clean_markdown = re.sub(r"[ \t]+$", "", clean_markdown, flags=re.MULTILINE)
+    # Export to markdown
+    markdown_content = doc.export_to_markdown(image_mode=ImageRefMode.REFERENCED)
 
-# Save output
-with open(target_note_dir / f"{doc_name}.md", "w", encoding="utf-8") as f:
-    f.write(clean_markdown)
+    # --- MODIFICATION: Use an iterator instead of index counters ---
+    image_iter = iter(saved_image_filenames)
+
+    def get_next_wikilink(match):
+        try:
+            filename = next(image_iter)
+            return f"![[{filename}]]"
+        except StopIteration:
+            return ""  # Fallback if there are more placeholders than images
+
+    # Replace placeholders with sequential WikiLinks
+    image_pattern = r"\{image_key\}|<!-- image -->|!\[.*?\]\((?:.*?/)?([^/\)]+\.(?:png|jpg|jpeg))\)"
+    clean_markdown = re.sub(image_pattern, get_next_wikilink, markdown_content)
+
+    # Cleanup slide headers and trailing whitespaces
+    clean_markdown = re.sub(r"^## (Page|Slide) \d+\n?", "", clean_markdown, flags=re.MULTILINE)
+    clean_markdown = re.sub(r"[ \t]+$", "", clean_markdown, flags=re.MULTILINE)
+
+    # Save output markdown note
+    output_note = target_note_dir / f"{doc_name}.md"
+    with open(output_note, "w", encoding="utf-8") as f:
+        f.write(clean_markdown)
+
+    print(f"Successfully generated: {output_note}")
