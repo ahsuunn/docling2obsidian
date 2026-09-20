@@ -6,10 +6,9 @@ from docling.datamodel.pipeline_options import PdfPipelineOptions
 from docling.document_converter import DocumentConverter, PdfFormatOption
 from docling_core.types.doc import ImageRefMode, PictureItem
 
-# 1. Setup paths
+# 1. Setup base paths
 vault_root = Path("/home/malik/Documents/obsidian/Notex")
-assets_dir = vault_root / "00 Meta" / "Assets" / "attachments"
-assets_dir.mkdir(parents=True, exist_ok=True)
+attachments_base_dir = vault_root / "00 Meta" / "Assets" / "attachments"
 
 target_note_dir = vault_root / "01 Academics" / "7th Semester (2026-1)" / "Big Data"
 target_note_dir.mkdir(parents=True, exist_ok=True)
@@ -26,10 +25,14 @@ converter = DocumentConverter(
 )
 
 # 3. Convert document
-doc_name = "02 ch01-intro"
+doc_name = "04 Apache Hadoop_rev"
 pdf_path = f"{doc_name}.pdf"
 result = converter.convert(pdf_path)
 doc = result.document
+
+# --- MODIFICATION: Create document-specific subfolder under attachments ---
+doc_attachments_dir = attachments_base_dir / doc_name
+doc_attachments_dir.mkdir(parents=True, exist_ok=True)
 
 # 4. Extract images and store filenames sequentially in a queue
 saved_image_filenames = []
@@ -41,10 +44,11 @@ for element, _ in doc.iterate_items():
         if image:
             image_counter += 1
             filename = f"{doc_name.lower().replace(' ', '_')}_img_{image_counter:03d}.png"
-            filepath = assets_dir / filename
             
-            # Save PIL image to 00 Meta/Assets
+            # Save PIL image into the document subfolder
+            filepath = doc_attachments_dir / filename
             image.save(filepath, format="PNG")
+            
             saved_image_filenames.append(filename)
 
 # 5. Export document
@@ -58,6 +62,7 @@ def get_next_wikilink(match):
     if image_index < len(saved_image_filenames):
         filename = saved_image_filenames[image_index]
         image_index += 1
+        # Obsidian short WikiLinks resolve automatically across subfolders
         return f"![[{filename}]]"
     return ""  # If there are more placeholders than saved images
 
